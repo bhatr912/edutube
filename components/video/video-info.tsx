@@ -4,7 +4,8 @@ import { useState } from "react"
 import { ThumbsUp, ThumbsDown, Share, Download, MoreHorizontal, Bell, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { formatViewCount, formatPublishedDate, processDescription } from "@/lib/utils/youtube-helpers"
+import { formatViewCount } from "@/lib/utils/format"
+import { formatDistanceToNow } from "date-fns"
 import type { Video } from "@/lib/types/video"
 
 interface VideoInfoProps {
@@ -14,8 +15,6 @@ interface VideoInfoProps {
 export function VideoInfo({ video }: VideoInfoProps) {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false)
   const [isSubscribed, setIsSubscribed] = useState(false)
-  const [isLiked, setIsLiked] = useState(false)
-  const [isDisliked, setIsDisliked] = useState(false)
 
   const toggleDescription = () => {
     setIsDescriptionExpanded(!isDescriptionExpanded)
@@ -23,16 +22,6 @@ export function VideoInfo({ video }: VideoInfoProps) {
 
   const toggleSubscribe = () => {
     setIsSubscribed(!isSubscribed)
-  }
-
-  const handleLike = () => {
-    setIsLiked(!isLiked)
-    if (isDisliked) setIsDisliked(false)
-  }
-
-  const handleDislike = () => {
-    setIsDisliked(!isDisliked)
-    if (isLiked) setIsLiked(false)
   }
 
   // Truncate description for collapsed state
@@ -49,30 +38,27 @@ export function VideoInfo({ video }: VideoInfoProps) {
         <div className="flex items-center space-x-4 text-sm text-gray-600">
           <span className="font-medium">{formatViewCount(video.views)} views</span>
           <span>•</span>
-          <span>{formatPublishedDate(video.publishedAt.toISOString())}</span>
+          <span>{formatDistanceToNow(video.publishedAt, { addSuffix: true })}</span>
         </div>
 
         <div className="flex items-center space-x-2">
-          <div className="flex items-center bg-gray-100 rounded-full">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLike}
-              className={`rounded-l-full px-4 py-2 ${isLiked ? "bg-blue-100 text-blue-600" : "hover:bg-gray-200"}`}
-            >
-              <ThumbsUp className="h-4 w-4 mr-2" />
-              <span className="text-sm font-medium">{formatViewCount(video.likes)}</span>
-            </Button>
-            <div className="w-px h-6 bg-gray-300" />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDislike}
-              className={`rounded-r-full px-4 py-2 ${isDisliked ? "bg-red-100 text-red-600" : "hover:bg-gray-200"}`}
-            >
-              <ThumbsDown className="h-4 w-4" />
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex items-center space-x-2 hover:bg-gray-100 rounded-full px-4 py-2"
+          >
+            <ThumbsUp className="h-4 w-4" />
+            <span className="text-sm font-medium">1.2K</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex items-center space-x-2 hover:bg-gray-100 rounded-full px-4 py-2"
+          >
+            <ThumbsDown className="h-4 w-4" />
+            <span className="text-sm">Dislike</span>
+          </Button>
 
           <Button
             variant="ghost"
@@ -117,7 +103,7 @@ export function VideoInfo({ video }: VideoInfoProps) {
                 </div>
               )}
             </div>
-            <p className="text-xs text-gray-600">{video.channel.subscribers}</p>
+            <p className="text-xs text-gray-600">2.1M subscribers</p>
           </div>
         </div>
 
@@ -142,27 +128,15 @@ export function VideoInfo({ video }: VideoInfoProps) {
           <div className="flex-1">
             <div className="flex items-center space-x-2 text-sm font-medium text-gray-900 mb-2">
               <span>{formatViewCount(video.views)} views</span>
-              <span>{formatPublishedDate(video.publishedAt.toISOString())}</span>
-              {video.tags && video.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {video.tags.slice(0, 3).map((tag, index) => (
-                    <span key={index} className="text-blue-600 text-xs">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              )}
+              <span>{formatDistanceToNow(video.publishedAt, { addSuffix: true })}</span>
             </div>
 
             <div className="text-sm text-gray-700 leading-relaxed">
               {isDescriptionExpanded ? (
-                <div
-                  className="whitespace-pre-wrap"
-                  dangerouslySetInnerHTML={{ __html: processDescription(video.description) }}
-                />
+                <div className="whitespace-pre-wrap">{video.description}</div>
               ) : (
                 <div>
-                  <div dangerouslySetInnerHTML={{ __html: processDescription(truncatedDescription) }} />
+                  {truncatedDescription}
                   {video.description.length > 200 && (
                     <button onClick={toggleDescription} className="text-gray-900 font-medium ml-1 hover:underline">
                       ...more

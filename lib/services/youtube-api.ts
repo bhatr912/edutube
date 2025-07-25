@@ -6,7 +6,7 @@ import type {
   YouTubeCommentsResponse,
 } from "@/lib/types/youtube"
 
-export class YouTubeAPIError extends Error {
+class YouTubeAPIError extends Error {
   constructor(
     message: string,
     public status?: number,
@@ -23,7 +23,7 @@ class YouTubeAPI {
   private async makeRequest<T>(endpoint: string, params: Record<string, any>): Promise<T> {
     const url = new URL(`${this.baseUrl}${endpoint}`)
 
-    // Add API key
+    // Add API key and default params
     url.searchParams.append("key", this.apiKey)
 
     // Add custom params
@@ -43,18 +43,11 @@ class YouTubeAPI {
       })
 
       if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
-
-        try {
-          const errorData = await response.json()
-          if (errorData.error?.message) {
-            errorMessage = errorData.error.message
-          }
-        } catch {
-          // Use default error message if JSON parsing fails
-        }
-
-        throw new YouTubeAPIError(errorMessage, response.status)
+        const errorData = await response.json().catch(() => ({}))
+        throw new YouTubeAPIError(
+          errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`,
+          response.status,
+        )
       }
 
       return await response.json()
@@ -111,7 +104,7 @@ class YouTubeAPI {
 
   async getChannelDetails(channelIds: string[]): Promise<YouTubeChannelResponse> {
     const params = {
-      part: "snippet,statistics,brandingSettings",
+      part: "snippet,statistics",
       id: channelIds.join(","),
     }
 
@@ -127,7 +120,7 @@ class YouTubeAPI {
     } = {},
   ): Promise<YouTubeCommentsResponse> {
     const params = {
-      part: "snippet,replies",
+      part: "snippet",
       videoId,
       maxResults: options.maxResults || 20,
       order: options.order || "relevance",
@@ -144,16 +137,12 @@ class YouTubeAPI {
       regionCode?: string
       videoCategoryId?: string
     } = {},
-  ): Promise<YouTubeVideoResponse> {
-    const params = {
-      part: "snippet,statistics,contentDetails",
-      chart: "mostPopular",
-      regionCode: options.regionCode || "US",
-      maxResults: options.maxResults || 25,
+  ): Promise<YouTubeSearchResponse> {
+    return this.searchVideos("", {
+      order: "viewCount",
+      publishedAfter: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // Last 7 days
       ...options,
-    }
-
-    return this.makeRequest<YouTubeVideoResponse>(YOUTUBE_ENDPOINTS.VIDEOS, params)
+    })
   }
 
   async getEducationalVideos(
@@ -180,9 +169,9 @@ class YouTubeAPI {
     }
 
     // Extract keywords from title and tags
-    const titleWords = video.snippet.title.split(" ").slice(0, 3)
-    const tags = video.snippet.tags?.slice(0, 3) || []
-    const keywords = [...titleWords, ...tags].join(" ")
+    const keywords = [...video.snippet.title.split(" ").slice(0, 3), ...(video.snippet.tags?.slice(0, 3) || [])].join(
+      " ",
+    )
 
     return this.searchVideos(keywords, {
       maxResults,
@@ -192,3 +181,4 @@ class YouTubeAPI {
 }
 
 export const youtubeAPI = new YouTubeAPI()
+export { YouTubeAPIError }
