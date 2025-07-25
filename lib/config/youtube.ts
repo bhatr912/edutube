@@ -1,5 +1,5 @@
 export const YOUTUBE_CONFIG = {
-  API_KEY: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY || "AIzaSyCBetWLm-KfeMkh_mas1XkrbOW1jDz8-XM",
+  API_KEY: process.env.NEXT_PUBLIC_YOUTUBE_API_KEY || "AIzaSyAPev839Wx86NsGMa44ZdX5FYQn25kE1r0",
   BASE_URL: "https://www.googleapis.com/youtube/v3",
   DEFAULT_PARAMS: {
     part: "snippet,statistics,contentDetails",
