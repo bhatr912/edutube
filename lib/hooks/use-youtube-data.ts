@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react"
 import { youtubeAPI, YouTubeAPIError } from "@/lib/services/youtube-api"
 import { convertYouTubeVideoToVideo } from "@/lib/utils/youtube-helpers"
-import type { Video } from "@/lib/types/video"
+import type { Video, Comment } from "@/lib/types/video"
+import type { YouTubeCommentItem } from "@/lib/types/youtube"
 
 interface UseYouTubeSearchResult {
   videos: Video[]
@@ -52,8 +53,21 @@ export function useYouTubeSearch(initialQuery = ""): UseYouTubeSearchResult {
         const videoIds = searchResponse.items.map((item) => item.id.videoId)
         const videoDetailsResponse = await youtubeAPI.getVideoDetails(videoIds)
 
+        // Get channel data for each video
+        const channelIds = [...new Set(videoDetailsResponse.items.map((item) => item.snippet.channelId))]
+        let channelMap = new Map()
+
+        try {
+          const channelResponse = await youtubeAPI.getChannelDetails(channelIds)
+          channelMap = new Map(channelResponse.items.map((channel) => [channel.id, channel]))
+        } catch (channelError) {
+          console.warn("Failed to fetch channel data:", channelError)
+        }
+
         // Convert to our Video format
-        const newVideos = videoDetailsResponse.items.map((videoItem) => convertYouTubeVideoToVideo(videoItem))
+        const newVideos = videoDetailsResponse.items.map((videoItem) =>
+          convertYouTubeVideoToVideo(videoItem, channelMap.get(videoItem.snippet.channelId)),
+        )
 
         setVideos((prev) => (reset ? newVideos : [...prev, ...newVideos]))
         setNextPageToken(searchResponse.nextPageToken || null)
@@ -98,7 +112,7 @@ interface UseYouTubeVideoResult {
   loading: boolean
   error: string | null
   relatedVideos: Video[]
-  comments: any[]
+  comments: Comment[]
   loadVideo: (videoId: string) => Promise<void>
   loadComments: () => Promise<void>
 }
@@ -108,7 +122,7 @@ export function useYouTubeVideo(videoId?: string): UseYouTubeVideoResult {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([])
-  const [comments, setComments] = useState<any[]>([])
+  const [comments, setComments] = useState<Comment[]>([])
 
   const loadVideo = useCallback(async (id: string) => {
     setLoading(true)
@@ -122,7 +136,18 @@ export function useYouTubeVideo(videoId?: string): UseYouTubeVideoResult {
         throw new YouTubeAPIError("Video not found")
       }
 
-      const videoData = convertYouTubeVideoToVideo(videoResponse.items[0])
+      const videoItem = videoResponse.items[0]
+
+      // Load channel details
+      let channelData = null
+      try {
+        const channelResponse = await youtubeAPI.getChannelDetails([videoItem.snippet.channelId])
+        channelData = channelResponse.items[0] || null
+      } catch (channelError) {
+        console.warn("Failed to fetch channel data:", channelError)
+      }
+
+      const videoData = convertYouTubeVideoToVideo(videoItem, channelData)
       setVideo(videoData)
 
       // Load related videos
@@ -132,12 +157,63 @@ export function useYouTubeVideo(videoId?: string): UseYouTubeVideoResult {
 
         if (relatedVideoIds.length > 0) {
           const relatedDetailsResponse = await youtubeAPI.getVideoDetails(relatedVideoIds)
-          const relatedVideosData = relatedDetailsResponse.items.map((item) => convertYouTubeVideoToVideo(item))
+
+          // Get channel data for related videos
+          const relatedChannelIds = [...new Set(relatedDetailsResponse.items.map((item) => item.snippet.channelId))]
+          let relatedChannelMap = new Map()
+
+          try {
+            const relatedChannelResponse = await youtubeAPI.getChannelDetails(relatedChannelIds)
+            relatedChannelMap = new Map(relatedChannelResponse.items.map((channel) => [channel.id, channel]))
+          } catch (channelError) {
+            console.warn("Failed to fetch related channel data:", channelError)
+          }
+
+          const relatedVideosData = relatedDetailsResponse.items.map((item) =>
+            convertYouTubeVideoToVideo(item, relatedChannelMap.get(item.snippet.channelId)),
+          )
           setRelatedVideos(relatedVideosData)
         }
       } catch (relatedError) {
         console.warn("Failed to load related videos:", relatedError)
         setRelatedVideos([])
+      }
+
+      // Load comments
+      try {
+        const commentsResponse = await youtubeAPI.getVideoComments(id, {
+          maxResults: 20,
+        })
+
+        const formattedComments: Comment[] = commentsResponse.items.map((item: YouTubeCommentItem) => ({
+          id: item.id,
+          author: {
+            name: item.snippet.topLevelComment.snippet.authorDisplayName,
+            avatar: item.snippet.topLevelComment.snippet.authorProfileImageUrl,
+            channelId: item.snippet.topLevelComment.snippet.authorChannelId?.value,
+          },
+          content: item.snippet.topLevelComment.snippet.textDisplay,
+          likes: item.snippet.topLevelComment.snippet.likeCount,
+          publishedAt: new Date(item.snippet.topLevelComment.snippet.publishedAt),
+          replyCount: item.snippet.totalReplyCount,
+          replies:
+            item.replies?.comments?.map((reply) => ({
+              id: reply.id,
+              author: {
+                name: reply.snippet.authorDisplayName,
+                avatar: reply.snippet.authorProfileImageUrl,
+                channelId: reply.snippet.authorChannelId?.value,
+              },
+              content: reply.snippet.textDisplay,
+              likes: reply.snippet.likeCount,
+              publishedAt: new Date(reply.snippet.publishedAt),
+            })) || [],
+        }))
+
+        setComments(formattedComments)
+      } catch (commentsError) {
+        console.warn("Failed to load comments:", commentsError)
+        setComments([])
       }
     } catch (err) {
       const errorMessage = err instanceof YouTubeAPIError ? err.message : "Failed to load video"
@@ -156,14 +232,29 @@ export function useYouTubeVideo(videoId?: string): UseYouTubeVideoResult {
         maxResults: 20,
       })
 
-      const formattedComments = commentsResponse.items.map((item) => ({
+      const formattedComments: Comment[] = commentsResponse.items.map((item: YouTubeCommentItem) => ({
         id: item.id,
-        author: item.snippet.topLevelComment.snippet.authorDisplayName,
-        avatar: item.snippet.topLevelComment.snippet.authorProfileImageUrl,
+        author: {
+          name: item.snippet.topLevelComment.snippet.authorDisplayName,
+          avatar: item.snippet.topLevelComment.snippet.authorProfileImageUrl,
+          channelId: item.snippet.topLevelComment.snippet.authorChannelId?.value,
+        },
         content: item.snippet.topLevelComment.snippet.textDisplay,
         likes: item.snippet.topLevelComment.snippet.likeCount,
-        timestamp: new Date(item.snippet.topLevelComment.snippet.publishedAt).toLocaleDateString(),
-        replies: item.snippet.totalReplyCount,
+        publishedAt: new Date(item.snippet.topLevelComment.snippet.publishedAt),
+        replyCount: item.snippet.totalReplyCount,
+        replies:
+          item.replies?.comments?.map((reply) => ({
+            id: reply.id,
+            author: {
+              name: reply.snippet.authorDisplayName,
+              avatar: reply.snippet.authorProfileImageUrl,
+              channelId: reply.snippet.authorChannelId?.value,
+            },
+            content: reply.snippet.textDisplay,
+            likes: reply.snippet.likeCount,
+            publishedAt: new Date(reply.snippet.publishedAt),
+          })) || [],
       }))
 
       setComments(formattedComments)
@@ -208,19 +299,37 @@ export function usePopularVideos(): UsePopularVideosResult {
     setError(null)
 
     try {
-      const searchResponse = await youtubeAPI.getEducationalVideos({
-        maxResults: 20,
-      })
+      // Try to get popular videos first
+      let videoResponse
+      try {
+        videoResponse = await youtubeAPI.getPopularVideos({ maxResults: 20 })
+      } catch (popularError) {
+        console.warn("Popular videos not available, falling back to educational content:", popularError)
+        // Fallback to educational videos
+        const searchResponse = await youtubeAPI.getEducationalVideos({ maxResults: 20 })
+        const videoIds = searchResponse.items.map((item) => item.id.videoId)
+        videoResponse = await youtubeAPI.getVideoDetails(videoIds)
+      }
 
-      if (searchResponse.items.length === 0) {
+      if (videoResponse.items.length === 0) {
         setVideos([])
         return
       }
 
-      const videoIds = searchResponse.items.map((item) => item.id.videoId)
-      const videoDetailsResponse = await youtubeAPI.getVideoDetails(videoIds)
+      // Get channel data for each video
+      const channelIds = [...new Set(videoResponse.items.map((item) => item.snippet.channelId))]
+      let channelMap = new Map()
 
-      const videosData = videoDetailsResponse.items.map((item) => convertYouTubeVideoToVideo(item))
+      try {
+        const channelResponse = await youtubeAPI.getChannelDetails(channelIds)
+        channelMap = new Map(channelResponse.items.map((channel) => [channel.id, channel]))
+      } catch (channelError) {
+        console.warn("Failed to fetch channel data:", channelError)
+      }
+
+      const videosData = videoResponse.items.map((item) =>
+        convertYouTubeVideoToVideo(item, channelMap.get(item.snippet.channelId)),
+      )
 
       setVideos(videosData)
     } catch (err) {

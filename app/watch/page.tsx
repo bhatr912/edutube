@@ -21,7 +21,7 @@ function WatchPageContent() {
   const searchParams = useSearchParams()
   const videoId = searchParams.get("v")
 
-  const { video, loading, error, relatedVideos } = useYouTubeVideo(videoId || undefined)
+  const { video, loading, error, relatedVideos, comments } = useYouTubeVideo(videoId || undefined)
 
   const [currentMode, setCurrentMode] = useState<"video" | "chat" | "notes">("video")
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -112,7 +112,7 @@ function WatchPageContent() {
             {!isFullscreen && (
               <>
                 <VideoInfo video={video} />
-                <Comments videoId={video.id} />
+                <Comments videoId={video.id} comments={comments} loading={false} error={null} />
               </>
             )}
           </div>
@@ -135,7 +135,7 @@ function WatchPageContent() {
             <div className="w-96 transition-all duration-300 ease-in-out">
               <div className="space-y-6 sticky top-6">
                 <AIHighlights />
-                <RelatedVideos currentVideoId={video.id} />
+                <RelatedVideos currentVideoId={video.id} videos={relatedVideos} />
               </div>
             </div>
           )}
